@@ -3,13 +3,13 @@ import streamlit as st
 from scipy.optimize import linprog
 
 def main():
-    st.set_page_config(page_title="Resolução de PPL", layout="wide")
-    st.title("Resolução de PPL")
+    st.set_page_config(page_title="Resolução de PPL com Pós-Otimização", layout="wide")
+    st.title("Resolução de PPL com Pós-Otimização")
 
     st.sidebar.header("Entradas de dados")
 
     st.sidebar.subheader("Função Objetivo")
-    num_obj_coef = st.sidebar.number_input("Número de Variáveis:", min_value=1, max_value=10, value=2)
+    num_obj_coef = st.sidebar.number_input("Número de Variáveis:", min_value=1, max_value=10, value=3)
     obj_coef = [st.sidebar.number_input(f"Coeficiente {i+1}:", format="%.2f") for i in range(num_obj_coef)]
 
     st.sidebar.subheader("Restrições")
@@ -25,6 +25,11 @@ def main():
     types = []
     for i in range(num_restricoes):
         types.append(st.sidebar.selectbox(f"Tipo de Restrição {i+1}:", ['<=', '>=', '='], index=0))
+
+    delta = []
+    for i in range(num_obj_coef):
+        delta_value = st.sidebar.number_input(f"Variação no Coeficiente {i+1} (Delta):", format="%.2f", value=0.00)
+        delta.append(delta_value)
 
     if st.button("Calcular"):
         if not obj_coef or not rest or not rhs or not types:
@@ -51,17 +56,53 @@ def main():
             bounds = [(0, None) for _ in range(len(obj_coef))]
 
             c = [-coef for coef in obj_coef]
-
             res = linprog(c=c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
 
             if res.success:
                 optimal_value = -res.fun
                 optimal_solution = res.x
-                st.success(f"Ponto Ótimo: {optimal_solution}")
-                st.success(f"Lucro Ótimo: {optimal_value}")
-
+                st.success(f"Ponto Ótimo:")
+                for i, value in enumerate(optimal_solution):
+                    st.write(f"x{i+1}: {value:.2f}")
+                st.success(f"Lucro Ótimo: {optimal_value:.2f}")
                 shadow_prices = res.slack
-                st.success(f"Preços Sombra: {shadow_prices}")
+                st.success(f"Preços Sombra:")
+                for i, value in enumerate(shadow_prices):
+                    st.write(f"ps{i+1}: {value:.2f}")
+                new_obj_coef = [obj_coef[i] + delta[i] for i in range(num_obj_coef)]
+                new_c = [-coef for coef in new_obj_coef]
+
+                res_new = linprog(c=new_c, A_ub=A, b_ub=b, bounds=bounds, method='highs')
+
+                if res_new.success:
+                    new_optimal_value = -res_new.fun
+                    new_optimal_solution = res_new.x
+
+                    st.title(f"Pós otimização:")
+                    st.success(f"Novo Ponto Ótimo:")
+                    for i, value in enumerate(new_optimal_solution):
+                        st.write(f"x{i+1}: {value:.2f}")
+                    st.success(f"Novo Lucro Ótimo: {new_optimal_value:.2f}")
+              
+                    is_viable = True
+                    for i in range(len(A)):
+                        lhs = np.dot(A[i], new_optimal_solution)
+                        if types[i] == '<=' and lhs > b[i]:
+                            is_viable = False
+                            break
+                        elif types[i] == '>=' and lhs < b[i]:
+                            is_viable = False
+                            break
+                        elif types[i] == '=' and not np.isclose(lhs, b[i]):
+                            is_viable = False
+                            break
+
+                    if is_viable:
+                        st.success("Solução ajustada é viável.")
+                    else:
+                        st.error("Solução ajustada não é viável.")
+                else:
+                    st.error("Não foi possível encontrar uma solução viável após ajustes.")
             else:
                 st.error("Não foi possível encontrar uma solução viável.")
 
